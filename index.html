@@ -3,161 +3,210 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#0b1020">
-<title>ROYAL WIFI - QR Login</title>
+<meta name="theme-color" content="#111827">
+<title>ROYAL WIFI - QR</title>
 <style>
 *{box-sizing:border-box}
-body{margin:0;min-height:100vh;background:linear-gradient(135deg,#07101f,#111a35 55%,#070b16);font-family:Tahoma,Arial,sans-serif;color:#fff;display:flex;justify-content:center;align-items:center;padding:18px}
-.card{width:min(520px,100%);background:rgba(16,24,45,.96);border:1px solid rgba(255,255,255,.12);border-radius:28px;padding:22px;box-shadow:0 25px 70px rgba(0,0,0,.45);text-align:center}
-.brand{font-size:26px;font-weight:900;letter-spacing:1px;margin-bottom:6px}
-.sub{color:#b8c3dc;font-size:14px;margin-bottom:18px}
-#reader{width:100%;max-width:430px;margin:0 auto;overflow:hidden;border-radius:20px;background:#000;min-height:260px}
-#reader video{border-radius:20px}
-.status{margin:16px 0;padding:13px;border-radius:14px;background:rgba(255,255,255,.07);color:#dce5ff;font-size:14px;line-height:1.7}
-button{border:0;border-radius:14px;padding:13px 20px;font-size:16px;font-weight:800;cursor:pointer;background:linear-gradient(135deg,#ffd76a,#f3a51b);color:#17110a}
-button.secondary{background:#273553;color:#fff;margin-right:8px}
-.raw{display:none;text-align:right;direction:ltr;background:#090d17;border:1px solid #293652;padding:10px;border-radius:12px;word-break:break-all;font-size:12px;color:#bcd0ff}
-.small{font-size:11px;color:#8995af;margin-top:14px;line-height:1.6}
+body{
+  margin:0;min-height:100vh;font-family:Tahoma,Arial,sans-serif;
+  background:linear-gradient(145deg,#0b1020,#172554 55%,#111827);
+  color:#fff;display:flex;align-items:center;justify-content:center;padding:18px
+}
+.card{
+  width:min(460px,100%);background:rgba(255,255,255,.08);
+  border:1px solid rgba(255,255,255,.18);border-radius:28px;
+  padding:22px;box-shadow:0 25px 70px rgba(0,0,0,.4);
+  backdrop-filter:blur(14px)
+}
+.brand{text-align:center;font-size:25px;font-weight:900;letter-spacing:1px;margin-bottom:5px}
+.sub{text-align:center;color:#cbd5e1;font-size:14px;margin-bottom:18px}
+#reader{
+  width:100%;min-height:270px;border-radius:20px;overflow:hidden;
+  background:#050816;border:1px solid rgba(255,255,255,.15)
+}
+#reader video{width:100%!important;height:auto!important;display:block}
+button{
+  width:100%;border:0;border-radius:15px;padding:15px;margin-top:12px;
+  font-size:17px;font-weight:800;cursor:pointer
+}
+#start{background:#fff;color:#111827}
+#stop{background:#334155;color:#fff}
+#status{
+  margin-top:14px;padding:12px;border-radius:13px;
+  background:rgba(0,0,0,.25);font-size:14px;line-height:1.7;text-align:center
+}
+#result{display:none;margin-top:12px;padding:12px;border-radius:13px;background:#052e16;color:#bbf7d0}
+.small{margin-top:12px;text-align:center;color:#94a3b8;font-size:12px;line-height:1.7}
 </style>
-<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 </head>
 <body>
 <div class="card">
   <div class="brand">༺👑 ＲＯＹＡＬ ＷＩＦＩ 👑༻</div>
-  <div class="sub">تسجيل الدخول بالكارت عن طريق QR</div>
+  <div class="sub">امسح QR الخاص بالكارت لتسجيل الدخول</div>
 
   <div id="reader"></div>
-  <div id="status" class="status">اضغط «بدء الكاميرا» ثم وجّه الكاميرا إلى QR الموجود على الكارت.</div>
-  <button id="start">📷 بدء الكاميرا</button>
-  <button id="stop" class="secondary" style="display:none">إيقاف</button>
 
-  <div id="raw" class="raw"></div>
-  <div class="small">يتم إرسال بيانات الكارت إلى صفحة تسجيل الدخول في MikroTik بعد قراءة QR.</div>
+  <button id="start" type="button">📷 تشغيل الكاميرا</button>
+  <button id="stop" type="button" disabled>⏹ إيقاف الكاميرا</button>
+
+  <div id="status">اضغط «تشغيل الكاميرا» للبدء</div>
+  <div id="result"></div>
+
+  <div class="small">
+    يجب فتح الصفحة في متصفح الهاتف العادي والسماح باستخدام الكاميرا عند الطلب.
+  </div>
 </div>
 
 <script>
 (function(){
-  const HOTSPOT = "http://1.0.0.1/login";
-  const statusEl = document.getElementById("status");
-  const rawEl = document.getElementById("raw");
-  const startBtn = document.getElementById("start");
-  const stopBtn = document.getElementById("stop");
-  let scanner = null, busy = false;
+  const status = document.getElementById('status');
+  const result = document.getElementById('result');
+  const startBtn = document.getElementById('start');
+  const stopBtn = document.getElementById('stop');
 
-  function status(t){ statusEl.textContent=t; }
+  let stream = null;
+  let scanning = false;
+  let timer = null;
 
-  function decodeValue(v){
-    try { return decodeURIComponent(v.replace(/\+/g," ")); } catch(e){ return v; }
+  function setStatus(msg){ status.textContent = msg; }
+
+  function stopCamera(){
+    scanning = false;
+    if(timer){ clearInterval(timer); timer=null; }
+    if(stream){
+      stream.getTracks().forEach(t=>t.stop());
+      stream=null;
+    }
+    const video=document.querySelector('#reader video');
+    if(video) video.srcObject=null;
+    stopBtn.disabled=true;
+    startBtn.disabled=false;
   }
 
-  function extractCredentials(raw){
-    raw = String(raw || "").trim();
-    let username="", password="", dst="";
+  function parseQR(text){
+    text=(text||'').trim();
+    let username='', password='';
 
-    // URL/query/hash forms
     try{
-      const u = new URL(raw);
-      const p = u.searchParams;
-      username = p.get("username") || p.get("user") || p.get("u") || "";
-      password = p.get("password") || p.get("pass") || p.get("p") || "";
-      dst = p.get("dst") || "";
+      const u=new URL(text);
+      username=u.searchParams.get('username')||u.searchParams.get('user')||u.searchParams.get('u')||'';
+      password=u.searchParams.get('password')||u.searchParams.get('pass')||u.searchParams.get('p')||'';
     }catch(e){}
 
-    // key=value text, JSON-like text, or plain labels
-    const get = (names) => {
-      for(const n of names){
-        const re = new RegExp('(?:^|[?&\\s,;|{}\\[\\]"]+)' + n + '\\s*[:=]\\s*["\\']?([^"\\'&\\s,;|}\\]]+)', 'i');
-        const m = raw.match(re);
-        if(m) return decodeValue(m[1]);
-      }
-      return "";
-    };
+    if(!username || !password){
+      const m1=text.match(/(?:username|user|u)\s*[:=]\s*([^\s&;]+)/i);
+      const m2=text.match(/(?:password|pass|p)\s*[:=]\s*([^\s&;]+)/i);
+      if(m1) username=m1[1];
+      if(m2) password=m2[1];
+    }
 
-    if(!username) username=get(["username","user","login","u"]);
-    if(!password) password=get(["password","pass","pwd","p"]);
-
-    // Some scanners return JSON.
-    if((!username || !password) && /^[\[{]/.test(raw)){
+    if(!username || !password){
       try{
-        const j=JSON.parse(raw);
-        username=j.username || j.user || j.login || "";
-        password=j.password || j.pass || j.pwd || "";
-        dst=j.dst || "";
+        const j=JSON.parse(text);
+        username=j.username||j.user||j.u||'';
+        password=j.password||j.pass||j.p||'';
       }catch(e){}
     }
 
-    if(username && password) return {username,password,dst,raw};
-    return null;
+    return {username,password};
   }
 
-  function stop(){
-    if(scanner){
-      scanner.stop().catch(()=>{});
-      scanner.clear().catch(()=>{});
-      scanner=null;
-    }
-    stopBtn.style.display="none";
-    startBtn.style.display="inline-block";
-  }
+  function login(username,password){
+    result.style.display='block';
+    result.textContent='تم قراءة الكارت: '+username+' — جاري تسجيل الدخول…';
+    setStatus('تمت قراءة QR بنجاح');
+    stopCamera();
 
-  function login(c){
-    busy=true;
-    stop();
-    rawEl.style.display="block";
-    rawEl.textContent=c.raw;
-    status("تمت قراءة QR بنجاح. جارٍ تسجيل الدخول...");
-
-    // RouterOS HotSpot with http-pap accepts username/password POST.
-    const form=document.createElement("form");
-    form.method="POST";
-    form.action=HOTSPOT;
-    form.style.display="none";
+    // Top-level navigation/form POST avoids JS mixed-content fetch restrictions.
+    const form=document.createElement('form');
+    form.method='POST';
+    form.action='http://1.0.0.1/login';
+    form.style.display='none';
 
     const fields={
-      username:c.username,
-      password:c.password,
-      dst:c.dst || "http://1.0.0.1/",
-      popup:"true"
+      username:username,
+      password:password,
+      dst:'',
+      popup:'false'
     };
     Object.keys(fields).forEach(k=>{
-      const input=document.createElement("input");
-      input.type="hidden"; input.name=k; input.value=fields[k];
+      const input=document.createElement('input');
+      input.type='hidden'; input.name=k; input.value=fields[k];
       form.appendChild(input);
     });
     document.body.appendChild(form);
     form.submit();
   }
 
-  async function start(){
-    if(busy) return;
-    status("جارٍ تشغيل الكاميرا...");
-    startBtn.style.display="none";
-    stopBtn.style.display="inline-block";
-    scanner = new Html5Qrcode("reader");
-    try{
-      await scanner.start(
-        {facingMode:"environment"},
-        {fps:10, qrbox:{width:270,height:270}, aspectRatio:1.0},
-        (decodedText)=>{
-          const c=extractCredentials(decodedText);
-          if(c) login(c);
-          else {
-            rawEl.style.display="block";
-            rawEl.textContent=decodedText;
-            status("تمت قراءة QR لكن لم أجد Username وPassword. النص المقروء ظاهر بالأسفل.");
-          }
-        },
-        ()=>{}
-      );
-      status("الكاميرا تعمل. وجّهها إلى QR الكارت.");
-    }catch(e){
-      stop();
-      status("تعذر تشغيل الكاميرا. تأكد من السماح بالكاميرا وأن الصفحة مفتوحة عبر HTTPS.");
+  function handleText(text){
+    const c=parseQR(text);
+    if(c.username && c.password){
+      login(c.username,c.password);
+    }else{
+      setStatus('تم العثور على QR لكن بيانات الدخول غير مفهومة. تأكد أن QR يحتوي Username و Password.');
     }
   }
 
-  startBtn.addEventListener("click",start);
-  stopBtn.addEventListener("click",()=>{busy=false;stop();status("تم إيقاف الكاميرا.");});
+  async function startCamera(){
+    if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
+      setStatus('هذا المتصفح لا يسمح بالكاميرا هنا. افتح الرابط في Chrome أو Safari العادي.');
+      return;
+    }
+
+    try{
+      setStatus('جاري طلب إذن الكاميرا…');
+      stream=await navigator.mediaDevices.getUserMedia({
+        video:{facingMode:{ideal:'environment'}},
+        audio:false
+      });
+
+      const reader=document.getElementById('reader');
+      reader.innerHTML='';
+      const video=document.createElement('video');
+      video.setAttribute('playsinline','');
+      video.setAttribute('autoplay','');
+      video.muted=true;
+      video.srcObject=stream;
+      reader.appendChild(video);
+      await video.play();
+
+      scanning=true;
+      startBtn.disabled=true;
+      stopBtn.disabled=false;
+      setStatus('الكاميرا تعمل. وجّهها إلى QR الموجود على الكارت.');
+
+      // Use native BarcodeDetector when available.
+      if('BarcodeDetector' in window){
+        let detector;
+        try{
+          detector=new BarcodeDetector({formats:['qr_code']});
+        }catch(e){ detector=new BarcodeDetector(); }
+
+        timer=setInterval(async()=>{
+          if(!scanning || video.readyState<2) return;
+          try{
+            const codes=await detector.detect(video);
+            if(codes && codes.length && codes[0].rawValue){
+              handleText(codes[0].rawValue);
+            }
+          }catch(e){}
+        },350);
+      }else{
+        setStatus('الكاميرا تعمل، لكن هذا المتصفح لا يدعم قراءة QR مباشرة. سنضيف قارئ QR محلي في النسخة التالية.');
+      }
+
+    }catch(err){
+      let msg='تعذر تشغيل الكاميرا.';
+      if(err && err.name==='NotAllowedError') msg='تم رفض صلاحية الكاميرا. اسمح للمتصفح باستخدام الكاميرا ثم أعد المحاولة.';
+      else if(err && err.name==='NotFoundError') msg='لم يتم العثور على كاميرا في الجهاز.';
+      else if(err && err.name==='NotReadableError') msg='الكاميرا مستخدمة بواسطة تطبيق آخر. أغلقه وأعد المحاولة.';
+      else if(err && err.name==='SecurityError') msg='المتصفح منع الكاميرا لأسباب أمنية. افتح الصفحة من HTTPS في Chrome/Safari العادي.';
+      setStatus(msg);
+    }
+  }
+
+  startBtn.addEventListener('click',startCamera);
+  stopBtn.addEventListener('click',()=>{stopCamera();setStatus('تم إيقاف الكاميرا.');});
 })();
 </script>
 </body>
